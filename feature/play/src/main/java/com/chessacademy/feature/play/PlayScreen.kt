@@ -3,6 +3,7 @@ package com.chessacademy.feature.play
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Undo
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -12,11 +13,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.chessacademy.chess.board.ChessBoard
+import com.chessacademy.chess.rules.GameStateStatus
 import com.chessacademy.chess.rules.Square
 import com.chessacademy.core.designsystem.components.OneUiScaffold
 
 /**
- * Spielbildschirm für den Modus "Gegen Computer" (Stockfish).
+ * Vollständiger Spielbildschirm für CHESS ACADEMY.
+ * Bietet interaktives Schachbrett, Spieler-Metadaten, Zugliste,
+ * Statusanzeige (Schach, Matt, Patt) sowie Reset- und Steuerungsoptionen.
  */
 @Composable
 fun PlayScreen(
@@ -30,8 +34,13 @@ fun PlayScreen(
             TopAppBar(
                 title = { Text("Partie gegen Computer", fontWeight = FontWeight.Bold) },
                 actions = {
-                    IconButton(onClick = { viewModel.restartGame() }) {
-                        Icon(Icons.Default.Refresh, contentDescription = "Neues Spiel")
+                    IconButton(
+                        onClick = { viewModel.restartGame() }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = "Neues Spiel"
+                        )
                     }
                 }
             )
@@ -48,46 +57,15 @@ fun PlayScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.SpaceBetween
             ) {
-                // Gegner-Info Card (Stockfish)
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
-                    )
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(12.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column {
-                            Text(
-                                text = "Gegner: Stockfish (KI)",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            val evalText = if (state.evaluationCp != null) {
-                                val eval = state.evaluationCp!! / 100.0
-                                "Bewertung: ${if (eval > 0) "+$eval" else "$eval"}"
-                            } else {
-                                "Bereitschaft: Aktiv"
-                            }
-                            Text(
-                                text = evalText,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        if (state.isEngineThinking) {
-                            CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
-                        }
-                    }
-                }
+                // 1. Gegner- & Spielerinfo (Schwarz oben)
+                PlayerHeaderCard(
+                    playerName = "Stockfish (KI)",
+                    rating = state.engineElo,
+                    isThinking = state.isEngineThinking,
+                    evaluation = state.evaluationCp
+                )
 
-                // Schachbrett
+                // 2. Interaktives Schachbrett
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -103,7 +81,23 @@ fun PlayScreen(
                     )
                 }
 
-                // Status & Spielende-Dialog/Info
+                // 3. Eigener Spieler (Weiß unten) + Zugliste
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    PlayerHeaderCard(
+                        playerName = "Du (Weiß)",
+                        rating = 1200,
+                        isThinking = state.boardPosition.activeColor == com.chessacademy.chess.rules.Color.WHITE && !state.isGameOver,
+                        evaluation = null
+                    )
+
+                    // Zugverlauf
+                    MoveHistoryView(moves = state.moveHistory)
+                }
+
+                // 4. Statusanzeige & Spielende-Dialog
                 Column(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalAlignment = Alignment.CenterHorizontally
@@ -134,19 +128,70 @@ fun PlayScreen(
                             }
                         }
                     } else {
-                        val turnText = if (state.boardPosition.activeColor == com.chessacademy.chess.rules.Color.WHITE) {
-                            "Du bist am Zug (Weiß)"
-                        } else {
-                            "Stockfish denkt nach..."
+                        val statusText = when (state.gameStatus) {
+                            GameStateStatus.CHECK -> "Schach!"
+                            GameStateStatus.CHECKMATE -> "Schachmatt!"
+                            GameStateStatus.STALEMATE -> "Patt - Unentschieden"
+                            else -> if (state.boardPosition.activeColor == com.chessacademy.chess.rules.Color.WHITE) "Du bist am Zug" else "Stockfish berechnet..."
                         }
+
                         Text(
-                            text = turnText,
+                            text = statusText,
                             style = MaterialTheme.typography.bodyLarge,
-                            fontWeight = FontWeight.Medium,
-                            color = MaterialTheme.colorScheme.primary
+                            fontWeight = FontWeight.SemiBold,
+                            color = if (state.gameStatus == GameStateStatus.CHECK) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
                         )
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+fun PlayerHeaderCard(
+    playerName: String,
+    rating: Int,
+    isThinking: Boolean,
+    evaluation: Int?
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column {
+                Text(
+                    text = playerName,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                val subText = if (evaluation != null) {
+                    val evalVal = evaluation / 100.0
+                    "Elo: $rating | Eval: ${if (evalVal > 0) "+$evalVal" else "$evalVal"}"
+                } else {
+                    "Elo: $rating"
+                }
+                Text(
+                    text = subText,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            if (isThinking) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(22.dp),
+                    strokeWidth = 2.dp
+                )
             }
         }
     }
