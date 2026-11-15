@@ -17,22 +17,26 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.chessacademy.core.datastore.PreferencesRepository
+import com.chessacademy.feature.home.HomeScreen
 import com.chessacademy.feature.onboarding.OnboardingScreen
 import com.chessacademy.feature.onboarding.OnboardingViewModel
 
 /**
- * Definition der Navigationsrouten in CHESS ACADEMY.
+ * Definition sämtlicher Navigationsrouten in CHESS ACADEMY.
  */
 sealed class Screen(val route: String) {
-    object Splash : Screen("splash")
     object Onboarding : Screen("onboarding")
     object Home : Screen("home")
+    object Play : Screen("play")
+    object Academy : Screen("academy")
+    object Tactics : Screen("tactics")
+    object Analysis : Screen("analysis")
+    object Profile : Screen("profile")
+    object Settings : Screen("settings")
 }
 
 /**
  * Zentraler Navigationsgraph der Anwendung.
- * Steuert den Startbildschirm abhängig vom Onboarding-Status im DataStore
- * und verhindert doppelte Navigationsziele durch sauberes Back-Stack-Management.
  */
 @Composable
 fun ChessAcademyNavGraph(
@@ -40,7 +44,6 @@ fun ChessAcademyNavGraph(
     navController: NavHostController = rememberNavController(),
     preferencesRepository: PreferencesRepository
 ) {
-    // Reaktiver Strom der Benutzereinstellungen zur Ermittlung des Onboarding-Status
     val userPrefsState by preferencesRepository.userPreferencesFlow.collectAsState(initial = null)
 
     Surface(
@@ -50,7 +53,6 @@ fun ChessAcademyNavGraph(
         val prefs = userPrefsState
 
         if (prefs == null) {
-            // Ladezustand, während DataStore initialisiert wird (Splash / Loader)
             Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
@@ -69,13 +71,12 @@ fun ChessAcademyNavGraph(
                 startDestination = startDestination,
                 modifier = Modifier.fillMaxSize()
             ) {
-                // Onboarding-Route
+                // Onboarding
                 composable(route = Screen.Onboarding.route) {
                     val onboardingViewModel: OnboardingViewModel = hiltViewModel()
                     OnboardingScreen(
                         viewModel = onboardingViewModel,
                         onFinished = {
-                            // Navigiere zu Home und entferne Onboarding aus dem Back-Stack (kein Zurückkehren möglich)
                             navController.navigate(Screen.Home.route) {
                                 popUpTo(Screen.Onboarding.route) { inclusive = true }
                                 launchSingleTop = true
@@ -84,26 +85,38 @@ fun ChessAcademyNavGraph(
                     )
                 }
 
-                // Home-Route (Hauptbildschirm nach erfolgreichem Onboarding)
+                // Home
                 composable(route = Screen.Home.route) {
-                    HomeScreenPlaceholder()
+                    HomeScreen(
+                        onNavigateToPlay = { navController.navigate(Screen.Play.route) },
+                        onNavigateToAcademy = { navController.navigate(Screen.Academy.route) },
+                        onNavigateToTactics = { navController.navigate(Screen.Tactics.route) },
+                        onNavigateToAnalysis = { navController.navigate(Screen.Analysis.route) },
+                        onNavigateToProfile = { navController.navigate(Screen.Profile.route) },
+                        onNavigateToSettings = { navController.navigate(Screen.Settings.route) }
+                    )
                 }
+
+                // Platzhalter-Routen für kommende Feature-Module
+                composable(route = Screen.Play.route) { FeaturePlaceholder("Spielmodus gegen Computer") }
+                composable(route = Screen.Academy.route) { FeaturePlaceholder("Academy Lektionen") }
+                composable(route = Screen.Tactics.route) { FeaturePlaceholder("Taktiktraining") }
+                composable(route = Screen.Analysis.route) { FeaturePlaceholder("Partie-Analyse & KI-Coach") }
+                composable(route = Screen.Profile.route) { FeaturePlaceholder("Profil & Statistik") }
+                composable(route = Screen.Settings.route) { FeaturePlaceholder("Einstellungen") }
             }
         }
     }
 }
 
-/**
- * Platzhalter für den Home-Bildschirm, bis das :feature:home-Modul integriert wird.
- */
 @Composable
-fun HomeScreenPlaceholder() {
+fun FeaturePlaceholder(title: String) {
     Box(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
     ) {
         Text(
-            text = "Willkommen zurück bei Chess Academy! (Home-Bildschirm)",
+            text = "$title – In Entwicklung",
             style = MaterialTheme.typography.titleLarge
         )
     }
