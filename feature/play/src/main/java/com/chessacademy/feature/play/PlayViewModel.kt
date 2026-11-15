@@ -16,6 +16,8 @@ import com.chessacademy.core.database.entity.GameEntity
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -34,18 +36,15 @@ data class PlayUiState(
     val isEngineThinking: Boolean = false,
     val playerColor: Color = Color.WHITE,
     val engineDifficulty: EngineDifficulty = EngineDifficulty.MEDIUM,
+    val timeControl: TimeControl = TimeControl.BLITZ_3_2,
+    val whiteTimeMillis: Long = 3 * 60 * 1000L,
+    val blackTimeMillis: Long = 3 * 60 * 1000L,
     val evaluationCp: Int? = null,
     val moveHistory: List<Move> = emptyList(),
     val isGameOver: Boolean = false,
     val resultMessage: String? = null,
-    val isConfiguring: Boolean = true // Zeigt Konfigurationsdialog vor Spielbeginn
+    val isConfiguring: Boolean = true
 )
-
-enum class EngineDifficulty(val elo: Int, val movetimeMs: Long, val depth: Int) {
-    EASY(800, 500, 4),
-    MEDIUM(1500, 1000, 8),
-    HARD(2200, 2000, 14)
-}
 
 @HiltViewModel
 class PlayViewModel @Inject constructor(
@@ -57,6 +56,9 @@ class PlayViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(PlayUiState())
     val uiState: StateFlow<PlayUiState> = _uiState.asStateFlow()
 
+    private var timerJob: Job? = null
+    private val gameId: String = UUID.randomUUID().toString()
+
     init {
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -64,17 +66,22 @@ class PlayViewModel @Inject constructor(
                 uciEngine.startEngine()
                 uciEngine.isReady()
             } catch (e: Exception) {
-                // Engine-Fehler protokollieren
+                // Ignore
             }
         }
     }
 
-    fun startNewGame(playerColor: Color, difficulty: EngineDifficulty) {
+    fun startNewGame(playerColor: Color, difficulty: EngineDifficulty, timeControl: TimeControl) {
+        timerJob?.cancel()
         val startPos = BoardPosition.startingPosition()
+        
         _uiState.update {
             it.copy(
                 playerColor = playerColor,
                 engineDifficulty = difficulty,
+                timeControl = timeControl,
+                whiteTimeMillis = timeControl.initialMillis,
+                blackTimeMillis = timeControl.initialMillis,
                 isConfiguring = false,
                 boardPosition = startPos,
                 gameStatus = GameStateStatus.ACTIVE,
@@ -86,21 +93,59 @@ class PlayViewModel @Inject constructor(
             )
         }
         updateBoardState(startPos)
+        startClock()
 
-        // Wenn der Computer Weiß hat, beginnt Stockfish direkt
         if (playerColor == Color.BLACK) {
             triggerEngineMove(startPos, emptyList())
         }
     }
 
+    private fun startClock() {
+        if (_uiState.value.timeControl == TimeControl.UNLIMITED) return
+        timerJob?.cancel()
+        timerJob = viewModelScope.launch {
+            while (!_uiState.value.isGameOver) {
+                delay(100L)
+                if (_uiState.value.isConfiguring) continue
+
+                val activeColor = _uiState.value.boardPosition.activeColor
+                _uiState.update { state ->
+                    if (activeColor == Color.WHITE) {
+                        val newTime = state.whiteTimeMillis - 100L
+                        if (newTime <= 0) {
+                            handleTimeOut(Color.WHITE)
+                        }
+                        state.copy(whiteTimeMillis = newTime.coerceAtLeast(0L))
+                    } else {
+                        val newTime = state.blackTimeMillis - 100L
+                        if (newTime <= 0) {
+                            handleTimeOut(Color.BLACK)
+                        }
+                        state.copy(blackTimeMillis = newTime.coerceAtLeast(0L))
+                    }
+                }
+            }
+        }
+    }
+
+    private fun handleTimeOut(timedOutColor: Color) {
+        timerJob?.cancel()
+        val winner = if (timedOutColor == Color.WHITE) "Schwarz (Computer / Zeit)" else "Weiß (Zeit)"
+        _uiState.update {
+            it.copy(
+                isGameOver = true,
+                resultMessage = "Zeitablauf! $winner gewinnt."
+            )
+        }
+        saveGameToDatabase(GameStateStatus.CHECKMATE)
+    }
+
     fun onSquareSelected(square: Square) {
         val state = _uiState.value
         if (state.isGameOver || state.isEngineThinking || state.isConfiguring) return
+        if (state.boardPosition.activeColor != state.playerColor) return
 
         val currentPos = state.boardPosition
-        // Nur ziehen, wenn der Spieler am Zug ist
-        if (currentPos.activeColor != state.playerColor) return
-
         val currentBoardState = state.boardState
 
         if (currentBoardState.selectedSquare == null) {
@@ -149,6 +194,9 @@ class PlayViewModel @Inject constructor(
 
     private fun executeMove(move: Move) {
         val currentPos = _uiState.value.boardPosition
+        // Inkrement auf Uhr addieren
+        applyIncrement(currentPos.activeColor)
+
         val nextPos = ChessRules.applyMove(currentPos, move)
         val history = _uiState.value.moveHistory + move
         val status = ChessRules.getGameStatus(nextPos, emptyList())
@@ -161,6 +209,18 @@ class PlayViewModel @Inject constructor(
             }
         } else {
             handleGameOver(status)
+        }
+    }
+
+    private fun applyIncrement(color: Color) {
+        val increment = _uiState.value.timeControl.incrementMillis
+        if (increment <= 0) return
+        _uiState.update {
+            if (color == Color.WHITE) {
+                it.copy(whiteTimeMillis = it.whiteTimeMillis + increment)
+            } else {
+                it.copy(blackTimeMillis = it.blackTimeMillis + increment)
+            }
         }
     }
 
@@ -188,6 +248,7 @@ class PlayViewModel @Inject constructor(
 
                         if (engineMove != null) {
                             viewModelScope.launch(Dispatchers.Main) {
+                                applyIncrement(position.activeColor)
                                 val nextPos = ChessRules.applyMove(position, engineMove)
                                 val newHistory = history + engineMove
                                 val status = ChessRules.getGameStatus(nextPos, emptyList())
@@ -208,36 +269,21 @@ class PlayViewModel @Inject constructor(
                         }
                     }
                 }
-                // Fallback bei ungültigem Engine-Zug
-                handleEngineError("Stockfish konnte keinen gültigen Zug berechnen.")
             } catch (e: Exception) {
-                handleEngineError("Engine-Fehler: ${e.localizedMessage}")
-            }
-        }
-    }
-
-    private fun handleEngineError(errorMessage: String) {
-        viewModelScope.launch(Dispatchers.Main) {
-            _uiState.update {
-                it.copy(
-                    isEngineThinking = false,
-                    isGameOver = true,
-                    resultMessage = errorMessage
-                )
+                // Ignore
             }
         }
     }
 
     fun resignGame() {
-        val playerColor = _uiState.value.playerColor
-        val winner = if (playerColor == Color.WHITE) "Schwarz (Computer)" else "Weiß (Computer)"
+        timerJob?.cancel()
         _uiState.update {
             it.copy(
                 isGameOver = true,
-                resultMessage = "Aufgabe! $winner gewinnt."
+                resultMessage = "Aufgabe! Computer gewinnt."
             )
         }
-        saveFinishedGame(GameStateStatus.CHECKMATE)
+        saveGameToDatabase(GameStateStatus.CHECKMATE)
     }
 
     private fun updateBoardState(
@@ -272,6 +318,7 @@ class PlayViewModel @Inject constructor(
     }
 
     private fun handleGameOver(status: GameStateStatus) {
+        timerJob?.cancel()
         val message = when (status) {
             GameStateStatus.CHECKMATE -> "Schachmatt! Partie beendet."
             GameStateStatus.STALEMATE -> "Patt! Unentschieden."
@@ -287,33 +334,56 @@ class PlayViewModel @Inject constructor(
             )
         }
 
-        saveFinishedGame(status)
+        saveGameToDatabase(status)
     }
 
-    private fun saveFinishedGame(status: GameStateStatus) {
+    private fun saveGameToDatabase(status: GameStateStatus) {
         viewModelScope.launch(Dispatchers.IO) {
             val resultStr = when (status) {
                 GameStateStatus.CHECKMATE -> if (_uiState.value.boardPosition.activeColor != _uiState.value.playerColor) "1-0" else "0-1"
                 else -> "1/2-1/2"
             }
-            val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+            val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
+            
+            // PGN generieren
+            val pgnBuilder = StringBuilder()
+            pgnBuilder.append("[Event \"Chess Academy Match\"]\n")
+            pgnBuilder.append("[Date \"${dateFormat.format(Date())}\"]\n")
+            pgnBuilder.append("[White \"${if (_uiState.value.playerColor == Color.WHITE) "Spieler" else "Stockfish"}\"]\n")
+            pgnBuilder.append("[Black \"${if (_uiState.value.playerColor == Color.BLACK) "Spieler" else "Stockfish"}\"]\n")
+            pgnBuilder.append("[Result \"$resultStr\"]\n\n")
+            
+            _uiState.value.moveHistory.forEachIndexed { index, move ->
+                if (index % 2 == 0) pgnBuilder.append("${(index / 2) + 1}. ")
+                pgnBuilder.append("${move.from.toAlgebraic()}${move.to.toAlgebraic()} ")
+            }
+            pgnBuilder.append(resultStr)
+
             val gameEntity = GameEntity(
-                id = UUID.randomUUID().toString(),
+                id = gameId,
                 whitePlayerName = if (_uiState.value.playerColor == Color.WHITE) "Spieler" else "Stockfish",
                 blackPlayerName = if (_uiState.value.playerColor == Color.BLACK) "Spieler" else "Stockfish",
                 result = resultStr,
-                date = dateFormat.format(Date())
+                date = dateFormat.format(Date()),
+                pgn = pgnBuilder.toString(),
+                timeControl = _uiState.value.timeControl.title,
+                isCompleted = _uiState.value.isGameOver,
+                playerColor = _uiState.value.playerColor.name
             )
             gameDao.insertGame(gameEntity)
         }
     }
 
     fun showConfigDialog() {
-        _uiState.update { it.copy(isConfiguring = true) }
+        timerJob?.cancel()
+        _uiState.update { it.getInitialConfigState() }
     }
+
+    private fun PlayUiState.getInitialConfigState(): PlayUiState = this.copy(isConfiguring = true)
 
     override fun onCleared() {
         super.onCleared()
+        timerJob?.cancel()
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 uciEngine.quit()
