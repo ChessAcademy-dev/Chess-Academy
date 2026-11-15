@@ -22,6 +22,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.chessacademy.core.datastore.PreferencesRepository
 import com.chessacademy.feature.home.HomeScreen
+import com.chessacademy.feature.home.HomeViewModel
 import com.chessacademy.feature.onboarding.OnboardingScreen
 import com.chessacademy.feature.onboarding.OnboardingViewModel
 
@@ -122,9 +123,11 @@ fun ChessAcademyNavGraph(
                         )
                     }
 
-                    // Home
+                    // Home (mit injizierten HomeViewModel)
                     composable(route = Screen.Home.route) {
+                        val homeViewModel: HomeViewModel = hiltViewModel()
                         HomeScreen(
+                            viewModel = homeViewModel,
                             onNavigateToPlay = { navController.navigate(Screen.Play.route) },
                             onNavigateToAcademy = { navController.navigate(Screen.Academy.route) },
                             onNavigateToTactics = { navController.navigate(Screen.Tactics.route) },
@@ -134,7 +137,7 @@ fun ChessAcademyNavGraph(
                         )
                     }
 
-                    // Feature-Module Routen
+                    // Noch nicht implementierte Feature-Module (mit klarem Hinweis)
                     composable(route = Screen.Play.route) { FeaturePlaceholder("Spielmodus gegen Computer") }
                     composable(route = Screen.Academy.route) { FeaturePlaceholder("Academy Lektionen") }
                     composable(route = Screen.Tactics.route) { FeaturePlaceholder("Taktiktraining & Puzzles") }
@@ -154,8 +157,9 @@ fun FeaturePlaceholder(title: String) {
         contentAlignment = Alignment.Center
     ) {
         Text(
-            text = "$title\n(Modul in Entwicklung)",
-            style = MaterialTheme.typography.titleLarge
+            text = "$title\n(Modul noch nicht implementiert)",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
 }
