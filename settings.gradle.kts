@@ -21,17 +21,29 @@ dependencyResolutionManagement {
 
 rootProject.name = "Chess Academy"
 
-// Inkludierung aller Core- und Feature-Module gemäß Projektstruktur
+// --- App Container ---
 include(":app")
+
+// --- Core Infrastructure ---
 include(":core:common")
 include(":core:designsystem")
 include(":core:datastore")
 include(":core:database")
 include(":core:audio")
 include(":core:network")
+
+// --- Chess Domain ---
 include(":chess:rules")
 include(":chess:pgn")
 include(":chess:engine")
 include(":chess:board")
+
+// --- Feature Modules ---
 include(":feature:onboarding")
 include(":feature:home")
+include(":feature:play")
+include(":feature:academy")
+include(":feature:tactics")
+include(":feature:analysis")
+include(":feature:profile")
+include(":feature:settings")
