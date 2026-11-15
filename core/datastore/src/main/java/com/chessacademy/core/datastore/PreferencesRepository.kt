@@ -41,6 +41,8 @@ class PreferencesRepository @Inject constructor(
         val DAILY_REMINDER_MINUTE = intPreferencesKey("daily_reminder_minute")
         val KIDS_MODE_ENABLED = booleanPreferencesKey("kids_mode_enabled")
         val CLOUD_SYNC_ENABLED = booleanPreferencesKey("cloud_sync_enabled")
+        val LEARNING_GOALS = stringSetPreferencesKey("learning_goals")
+        val ONBOARDING_COMPLETED = booleanPreferencesKey("onboarding_completed")
     }
 
     val userPreferencesFlow: Flow<UserPreferences> = context.dataStore.data
@@ -52,7 +54,6 @@ class PreferencesRepository @Inject constructor(
             }
         }
         .map { preferences ->
-            // Sichere Extraktion mit Validierung und Fallbacks
             val rawVolume = preferences[PreferencesKeys.SOUND_VOLUME] ?: 1.0f
             val rawTransparency = preferences[PreferencesKeys.TRANSPARENCY_LEVEL] ?: 0.8f
             val rawHour = preferences[PreferencesKeys.DAILY_REMINDER_HOUR] ?: 19
@@ -74,7 +75,9 @@ class PreferencesRepository @Inject constructor(
                 dailyReminderHour = rawHour.coerceIn(0, 23),
                 dailyReminderMinute = rawMinute.coerceIn(0, 59),
                 kidsModeEnabled = preferences[PreferencesKeys.KIDS_MODE_ENABLED] ?: false,
-                cloudSyncEnabled = preferences[PreferencesKeys.CLOUD_SYNC_ENABLED] ?: false
+                cloudSyncEnabled = preferences[PreferencesKeys.CLOUD_SYNC_ENABLED] ?: false,
+                learningGoals = preferences[PreferencesKeys.LEARNING_GOALS] ?: emptySet(),
+                onboardingCompleted = preferences[PreferencesKeys.ONBOARDING_COMPLETED] ?: false
             )
         }
 
@@ -144,5 +147,14 @@ class PreferencesRepository @Inject constructor(
 
     suspend fun updateCloudSyncEnabled(enabled: Boolean) {
         context.dataStore.edit { it[PreferencesKeys.CLOUD_SYNC_ENABLED] = enabled }
+    }
+
+    suspend fun updateLearningGoals(goals: Set<String>) {
+        val sanitizedGoals = goals.map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+        context.dataStore.edit { it[PreferencesKeys.LEARNING_GOALS] = sanitizedGoals }
+    }
+
+    suspend fun updateOnboardingCompleted(completed: Boolean) {
+        context.dataStore.edit { it[PreferencesKeys.ONBOARDING_COMPLETED] = completed }
     }
 }
