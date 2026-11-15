@@ -1,82 +1,81 @@
 package com.chessacademy.feature.home
 
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
 import com.chessacademy.core.database.dao.GameDao
 import com.chessacademy.core.database.dao.ProfileDao
 import com.chessacademy.core.database.entity.GameEntity
 import com.chessacademy.core.database.entity.ProfileEntity
 import com.chessacademy.core.datastore.PreferencesRepository
-import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.*
-import kotlinx.coroutines.launch
-import javax.inject.Inject
+import com.chessacademy.core.datastore.UserPreferences
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.test.*
+import org.junit.After
+import org.junit.Assert.*
+import org.junit.Before
+import org.junit.Test
+import org.mockito.Mockito.*
 
-data class HomeUiState(
-    val isLoading: Boolean = true,
-    val profile: ProfileEntity? = null,
-    val recentGames: List<GameEntity> = emptyList(),
-    val learningGoals: Set<String> = emptySet(),
-    val language: String = "de",
-    val errorMessage: String? = null
-)
+@OptIn(ExperimentalCoroutinesApi::class)
+class HomeViewModelTest {
 
-@HiltViewModel
-class HomeViewModel @Inject constructor(
-    private val profileDao: ProfileDao,
-    private val gameDao: GameDao,
-    private val preferencesRepository: PreferencesRepository
-) : ViewModel() {
+    private val testDispatcher = StandardTestDispatcher()
+    private lateinit var profileDao: ProfileDao
+    private lateinit var gameDao: GameDao
+    private lateinit var preferencesRepository: PreferencesRepository
 
-    private val _uiState = MutableStateFlow(HomeUiState())
-    val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
-
-    init {
-        loadHomeData()
+    @Before
+    fun setUp() {
+        Dispatchers.setMain(testDispatcher)
+        profileDao = mock(ProfileDao::class.java)
+        gameDao = mock(GameDao::class.java)
+        preferencesRepository = mock(PreferencesRepository::class.java)
     }
 
-    private fun loadHomeData() {
-        viewModelScope.launch {
-            try {
-                // Kombiniere Profile, Partien und Benutzereinstellungen reaktiv
-                combine(
-                    profileDao.getAllProfiles(),
-                    gameDao.getAllGames(),
-                    preferencesRepository.userPreferencesFlow
-                ) { profiles, games, prefs ->
-                    val activeProfile = profiles.firstOrNull()
-                    HomeUiState(
-                        isLoading = false,
-                        profile = activeProfile,
-                        recentGames = games.take(5), // Die 5 letzten Partien
-                        learningGoals = prefs.learningGoals,
-                        language = prefs.language,
-                        errorMessage = null
-                    )
-                }.catch { e ->
-                    _uiState.update { 
-                        it.copy(
-                            isLoading = false, 
-                            errorMessage = e.localizedMessage ?: "Fehler beim Laden der Daten"
-                        ) 
-                    }
-                }.collect { newState ->
-                    _uiState.value = newState
-                }
-            } catch (e: Exception) {
-                _uiState.update { 
-                    it.copy(
-                        isLoading = false, 
-                        errorMessage = e.localizedMessage ?: UnidentifiedError()
-                    ) 
-                }
-            }
-        }
+    @After
+    fun tearDown() {
+        Dispatchers.resetMain()
     }
 
-    private fun UnidentifiedError(): String = "Unbekannter Fehler aufgetreten"
+    @Test
+    fun initialState_loadsDataSuccessfully() = runTest {
+        // Arrange
+        val profile = ProfileEntity(id = 1, name = "TestPlayer", eloTactics = 1400)
+        val games = listOf(GameEntity(id = "1", whitePlayerName = "TestPlayer", blackPlayerName = "Stockfish", result = "1-0", date = "2026-11-15"))
+        val prefs = UserPreferences(onboardingCompleted = true, language = "de", learningGoals = setOf("Endgame"))
 
-    fun clearError() {
-        _uiState.update { it.copy(errorMessage = null) }
+        `when`(profileDao.getAllProfiles()).thenReturn(flowOf(listOf(profile)))
+        `when`(gameDao.getAllGames()).thenReturn(flowOf(games))
+        `when`(preferencesRepository.userPreferencesFlow).thenReturn(flowOf(prefs))
+
+        // Act
+        val viewModel = HomeViewModel(profileDao, gameDao, preferencesRepository)
+        testScheduler.advanceUntilIdle()
+
+        // Assert
+        val state = viewModel.uiState.value
+        assertFalse(state.isLoading)
+        assertEquals("TestPlayer", state.profile?.name)
+        assertEquals(1, state.recentGames.size)
+        assertEquals("de", state.language)
+        assertTrue(state.learningGoals.contains("Endgame"))
+        assertNull(state.errorMessage)
+    }
+
+    @Test
+    fun errorHandling_capturesExceptionGracefully() = runTest {
+        // Arrange
+        `when`(profileDao.getAllProfiles()).thenThrow(RuntimeException("Database error"))
+        `when`(gameDao.getAllGames()).thenReturn(flowOf(emptyList()))
+        `when`(preferencesRepository.userPreferencesFlow).thenReturn(flowOf(UserPreferences()))
+
+        // Act
+        val viewModel = HomeViewModel(profileDao, gameDao, preferencesRepository)
+        testScheduler.advanceUntilIdle()
+
+        // Assert
+        val state = viewModel.uiState.value
+        assertFalse(state.isLoading)
+        assertNotNull(state.errorMessage)
     }
 }
