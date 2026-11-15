@@ -4,18 +4,25 @@ import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.*
 import androidx.datastore.preferences.preferencesDataStore
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
 import java.io.IOException
+import javax.inject.Inject
+import javax.inject.Singleton
 
 // Singleton DataStore Instanz für das gesamte Projekt
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "chess_academy_preferences")
 
 /**
  * Repository zur reaktiven Verwaltung und Speicherung aller Benutzereinstellungen über DataStore.
+ * Vollständig abgesichert gegen ungültige Werte und vorbereitet für Hilt Dependency Injection.
  */
-class PreferencesRepository(private val context: Context) {
+@Singleton
+class PreferencesRepository @Inject constructor(
+    @ApplicationContext private val context: Context
+) {
 
     private object PreferencesKeys {
         val THEME_MODE = stringPreferencesKey("theme_mode")
@@ -45,28 +52,35 @@ class PreferencesRepository(private val context: Context) {
             }
         }
         .map { preferences ->
+            // Sichere Extraktion mit Validierung und Fallbacks
+            val rawVolume = preferences[PreferencesKeys.SOUND_VOLUME] ?: 1.0f
+            val rawTransparency = preferences[PreferencesKeys.TRANSPARENCY_LEVEL] ?: 0.8f
+            val rawHour = preferences[PreferencesKeys.DAILY_REMINDER_HOUR] ?: 19
+            val rawMinute = preferences[PreferencesKeys.DAILY_REMINDER_MINUTE] ?: 0
+
             UserPreferences(
-                themeMode = preferences[PreferencesKeys.THEME_MODE] ?: "system",
+                themeMode = preferences[PreferencesKeys.THEME_MODE]?.takeIf { it in listOf("light", "dark", "system") } ?: "system",
                 dynamicColor = preferences[PreferencesKeys.DYNAMIC_COLOR] ?: true,
-                language = preferences[PreferencesKeys.LANGUAGE] ?: "de",
+                language = preferences[PreferencesKeys.LANGUAGE]?.takeIf { it in listOf("de", "en") } ?: "de",
                 boardTheme = preferences[PreferencesKeys.BOARD_THEME] ?: "classic",
                 pieceStyle = preferences[PreferencesKeys.PIECE_STYLE] ?: "staunton",
-                pieceContrast = preferences[PreferencesKeys.PIECE_CONTRAST] ?: "auto",
+                pieceContrast = preferences[PreferencesKeys.PIECE_CONTRAST]?.takeIf { it in listOf("none", "thin", "medium", "strong", "auto") } ?: "auto",
                 soundEnabled = preferences[PreferencesKeys.SOUND_ENABLED] ?: true,
-                soundVolume = preferences[PreferencesKeys.SOUND_VOLUME] ?: 1.0f,
+                soundVolume = rawVolume.coerceIn(0.0f, 1.0f),
                 vibrationEnabled = preferences[PreferencesKeys.VIBRATION_ENABLED] ?: true,
                 animationsEnabled = preferences[PreferencesKeys.ANIMATIONS_ENABLED] ?: true,
-                transparencyLevel = preferences[PreferencesKeys.TRANSPARENCY_LEVEL] ?: 0.8f,
+                transparencyLevel = rawTransparency.coerceIn(0.0f, 1.0f),
                 notificationsEnabled = preferences[PreferencesKeys.NOTIFICATIONS_ENABLED] ?: true,
-                dailyReminderHour = preferences[PreferencesKeys.DAILY_REMINDER_HOUR] ?: 19,
-                dailyReminderMinute = preferences[PreferencesKeys.DAILY_REMINDER_MINUTE] ?: 0,
+                dailyReminderHour = rawHour.coerceIn(0, 23),
+                dailyReminderMinute = rawMinute.coerceIn(0, 59),
                 kidsModeEnabled = preferences[PreferencesKeys.KIDS_MODE_ENABLED] ?: false,
                 cloudSyncEnabled = preferences[PreferencesKeys.CLOUD_SYNC_ENABLED] ?: false
             )
         }
 
     suspend fun updateThemeMode(themeMode: String) {
-        context.dataStore.edit { it[PreferencesKeys.THEME_MODE] = themeMode }
+        val validMode = if (themeMode in listOf("light", "dark", "system")) themeMode else "system"
+        context.dataStore.edit { it[PreferencesKeys.THEME_MODE] = validMode }
     }
 
     suspend fun updateDynamicColor(enabled: Boolean) {
@@ -74,7 +88,8 @@ class PreferencesRepository(private val context: Context) {
     }
 
     suspend fun updateLanguage(language: String) {
-        context.dataStore.edit { it[PreferencesKeys.LANGUAGE] = language }
+        val validLang = if (language in listOf("de", "en")) language else "de"
+        context.dataStore.edit { it[PreferencesKeys.LANGUAGE] = validLang }
     }
 
     suspend fun updateBoardTheme(boardTheme: String) {
@@ -86,7 +101,8 @@ class PreferencesRepository(private val context: Context) {
     }
 
     suspend fun updatePieceContrast(contrast: String) {
-        context.dataStore.edit { it[PreferencesKeys.PIECE_CONTRAST] = contrast }
+        val validContrast = if (contrast in listOf("none", "thin", "medium", "strong", "auto")) contrast else "auto"
+        context.dataStore.edit { it[PreferencesKeys.PIECE_CONTRAST] = validContrast }
     }
 
     suspend fun updateSoundEnabled(enabled: Boolean) {
@@ -94,7 +110,7 @@ class PreferencesRepository(private val context: Context) {
     }
 
     suspend fun updateSoundVolume(volume: Float) {
-        context.dataStore.edit { it[PreferencesKeys.SOUND_VOLUME] = volume }
+        context.dataStore.edit { it[PreferencesKeys.SOUND_VOLUME] = volume.coerceIn(0.0f, 1.0f) }
     }
 
     suspend fun updateVibrationEnabled(enabled: Boolean) {
@@ -106,7 +122,7 @@ class PreferencesRepository(private val context: Context) {
     }
 
     suspend fun updateTransparencyLevel(level: Float) {
-        context.dataStore.edit { it[PreferencesKeys.TRANSPARENCY_LEVEL] = level }
+        context.dataStore.edit { it[PreferencesKeys.TRANSPARENCY_LEVEL] = level.coerceIn(0.0f, 1.0f) }
     }
 
     suspend fun updateNotificationsEnabled(enabled: Boolean) {
@@ -114,9 +130,11 @@ class PreferencesRepository(private val context: Context) {
     }
 
     suspend fun updateDailyReminderTime(hour: Int, minute: Int) {
+        val validHour = hour.coerceIn(0, 23)
+        val validMinute = minute.coerceIn(0, 59)
         context.dataStore.edit {
-            it[PreferencesKeys.DAILY_REMINDER_HOUR] = hour
-            it[PreferencesKeys.DAILY_REMINDER_MINUTE] = minute
+            it[PreferencesKeys.DAILY_REMINDER_HOUR] = validHour
+            it[PreferencesKeys.DAILY_REMINDER_MINUTE] = validMinute
         }
     }
 
