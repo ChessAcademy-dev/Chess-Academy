@@ -1,4 +1,4 @@
-äpackage com.chessacademy.feature.play
+package com.chessacademy.feature.play
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
