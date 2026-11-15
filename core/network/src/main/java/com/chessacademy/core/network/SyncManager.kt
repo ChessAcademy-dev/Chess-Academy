@@ -6,6 +6,7 @@ import android.net.NetworkCapabilities
 import com.chessacademy.core.common.Resource
 import com.chessacademy.core.datastore.PreferencesRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -26,13 +27,11 @@ sealed class SyncState {
 /**
  * Manager zur Steuerung der optionalen Cloud-Synchronisierung.
  * 
- * ARCHITEKTURHINWEIS & OFFENE BACKEND-ENTSCHEIDUNGEN:
- * - Die App arbeitet strikt nach dem **Offline-First-Prinzip**. Alle Daten (Partien, Profile, Training) 
- *   werden primär lokal in der Room-Datenbank gespeichert.
- * - Dieser SyncManager fungiert als abstrakte Schnittstelle. Eine konkrete Backend-Anbindung 
- *   (z. B. Firebase Firestore, Supabase oder ein eigener REST-Server) ist noch offen und kann 
- *   hier später flexibel per Dependency Injection angebunden werden.
- * - Es sind absolut keine API-Schlüssel oder Zugangsdaten im Quellcode hinterlegt.
+ * OFFLINE-FIRST ARCHITEKTUR:
+ * - Die App arbeitet vollständig lokal über die Room-Datenbank und DataStore. 
+ * - Ein Internetzugang ist für den Kernbetrieb (Spielen, Training, Academy, Analyse) nicht erforderlich.
+ * - Da aktuell kein Backend (Cloud-Server) angebunden ist, bricht der Sync sauber ab und teilt 
+ *   dem Nutzer transparent mit, dass der Offline-Modus aktiv ist.
  */
 @Singleton
 class SyncManager @Inject constructor(
@@ -44,6 +43,7 @@ class SyncManager @Inject constructor(
 
     /**
      * Prüft, ob das Gerät aktuell mit dem Internet verbunden ist.
+     * Benötigt die Berechtigung ACCESS_NETWORK_STATE im AndroidManifest.
      */
     fun isNetworkAvailable(): Boolean {
         val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
@@ -55,7 +55,7 @@ class SyncManager @Inject constructor(
 
     /**
      * Führt eine optionale Synchronisierung aus, falls der Benutzer dies in den Einstellungen
-     * aktiviert hat und eine Internetverbindung besteht.
+     * aktiviert hat. Da kein Backend konfiguriert ist, wird der Status entsprechend gesetzt.
      */
     suspend fun triggerSync(): Resource<Unit> {
         val preferences = preferencesRepository.userPreferencesFlow.first()
@@ -73,20 +73,22 @@ class SyncManager @Inject constructor(
             return Resource.Error(errorMsg)
         }
 
-        try {
+        return try {
             _syncState.value = SyncState.Syncing
 
-            // TODO: Hier wird später die tatsächliche Synchronisierung mit dem Backend implementiert
-            // (z. B. Upload von Partien, Abgleich von Trainingsfortschritten).
-            // Da das Backend noch nicht gewählt ist, simulieren wir hier einen erfolgreichen Durchlauf.
-            kotlinx.coroutines.delay(1000L)
-
-            _syncState.value = SyncState.Success
-            return Resource.Success(Unit)
-        } catch (e: Exception) {
-            val errorMsg = e.localizedMessage ?: Uncaught sync error
+            // Da kein Backend konfiguriert ist, melden wir transparent den Zustand.
+            // Die lokale App-Funktionalität bleibt davon völlig unberührt (Offline-First).
+            val errorMsg = "Cloud-Synchronisierung derzeit nicht verfügbar (kein Backend konfiguriert)."
             _syncState.value = SyncState.Error(errorMsg)
-            return Resource.Error(errorMsg)
+            Resource.Error(errorMsg)
+
+        } catch (e: CancellationException) {
+            // Wichtig: CancellationException niemals verschlucken, damit Coroutines normal abbrechen können
+            throw e
+        } catch (e: Exception) {
+            val errorMsg = e.localizedMessage ?: "Unbekannter Synchronisierungsfehler"
+            _syncState.value = SyncState.Error(errorMsg)
+            Resource.Error(errorMsg)
         }
     }
 }
