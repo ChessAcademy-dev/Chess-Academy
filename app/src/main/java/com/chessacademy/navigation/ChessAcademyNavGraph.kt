@@ -25,6 +25,8 @@ import com.chessacademy.feature.home.HomeScreen
 import com.chessacademy.feature.home.HomeViewModel
 import com.chessacademy.feature.onboarding.OnboardingScreen
 import com.chessacademy.feature.onboarding.OnboardingViewModel
+import com.chessacademy.feature.play.PlayScreen
+import com.chessacademy.feature.play.PlayViewModel
 
 sealed class Screen(val route: String, val label: String) {
     object Onboarding : Screen("onboarding", "Onboarding")
@@ -68,7 +70,6 @@ fun ChessAcademyNavGraph(
             val navBackStackEntry by navController.currentBackStackEntryAsState()
             val currentRoute = navBackStackEntry?.destination?.route
 
-            // Bottom Navigation Items für die Hauptbereiche
             val bottomNavItems = listOf(
                 Triple(Screen.Home, Icons.Default.Home, "Home"),
                 Triple(Screen.Play, Icons.Default.SportsEsports, "Spielen"),
@@ -79,7 +80,6 @@ fun ChessAcademyNavGraph(
 
             Scaffold(
                 bottomBar = {
-                    // Zeige Bottom Navigation nur an, wenn nicht im Onboarding
                     if (currentRoute != null && currentRoute != Screen.Onboarding.route) {
                         NavigationBar {
                             bottomNavItems.forEach { (screen, icon, label) ->
@@ -123,7 +123,7 @@ fun ChessAcademyNavGraph(
                         )
                     }
 
-                    // Home (mit injizierten HomeViewModel)
+                    // Home
                     composable(route = Screen.Home.route) {
                         val homeViewModel: HomeViewModel = hiltViewModel()
                         HomeScreen(
@@ -137,8 +137,16 @@ fun ChessAcademyNavGraph(
                         )
                     }
 
-                    // Noch nicht implementierte Feature-Module (mit klarem Hinweis)
-                    composable(route = Screen.Play.route) { FeaturePlaceholder("Spielmodus gegen Computer") }
+                    // Echter Spielmodus gegen Computer (:feature:play)
+                    composable(route = Screen.Play.route) {
+                        val playViewModel: PlayViewModel = hiltViewModel()
+                        PlayScreen(
+                            viewModel = playViewModel,
+                            onNavigateBack = { navController.popBackStack() }
+                        )
+                    }
+
+                    // Noch offene Feature-Module als Platzhalter behalten
                     composable(route = Screen.Academy.route) { FeaturePlaceholder("Academy Lektionen") }
                     composable(route = Screen.Tactics.route) { FeaturePlaceholder("Taktiktraining & Puzzles") }
                     composable(route = Screen.Analysis.route) { FeaturePlaceholder("Partie-Analyse & KI-Coach") }
@@ -157,7 +165,7 @@ fun FeaturePlaceholder(title: String) {
         contentAlignment = Alignment.Center
     ) {
         Text(
-            text = "$title\n(Modul noch nicht implementiert)",
+            text = "$title\n(Modul in Entwicklung)",
             style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
