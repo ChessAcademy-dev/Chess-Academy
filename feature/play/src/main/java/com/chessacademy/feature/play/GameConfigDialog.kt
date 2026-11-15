@@ -1,9 +1,10 @@
 package com.chessacademy.feature.play
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -11,10 +12,11 @@ import com.chessacademy.chess.rules.Color
 
 @Composable
 fun GameConfigDialog(
-    onStartGame: (Color, EngineDifficulty) -> Unit
+    onStartGame: (Color, EngineDifficulty, TimeControl) -> Unit
 ) {
     var selectedColor by remember { mutableStateOf(Color.WHITE) }
     var selectedDifficulty by remember { mutableStateOf(EngineDifficulty.MEDIUM) }
+    var selectedTimeControl by remember { mutableStateOf(TimeControl.BLITZ_3_2) }
 
     AlertDialog(
         onDismissRequest = {},
@@ -23,10 +25,12 @@ fun GameConfigDialog(
         },
         text = {
             Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Spielerfarbe wählen
+                // Spielerfarbe
                 Text(text = "Deine Farbe", style = MaterialTheme.typography.titleSmall)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -46,11 +50,11 @@ fun GameConfigDialog(
                     )
                 }
 
-                // Schwierigkeit wählen
+                // Schwierigkeit
                 Text(text = "KI-Schwierigkeit", style = MaterialTheme.typography.titleSmall)
                 Column(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     EngineDifficulty.values().forEach { diff ->
                         val label = when (diff) {
@@ -66,11 +70,27 @@ fun GameConfigDialog(
                         )
                     }
                 }
+
+                // Bedenkzeit
+                Text(text = "Bedenkzeit", style = MaterialTheme.typography.titleSmall)
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    TimeControl.values().forEach { tc ->
+                        FilterChip(
+                            selected = selectedTimeControl == tc,
+                            onClick = { selectedTimeControl = tc },
+                            label = { Text(tc.title) },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
             }
         },
         confirmButton = {
             Button(
-                onClick = { onStartGame(selectedColor, selectedDifficulty) }
+                onClick = { onStartGame(selectedColor, selectedDifficulty, selectedTimeControl) }
             ) {
                 Text("Spiel starten")
             }
