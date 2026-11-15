@@ -145,6 +145,15 @@ fun ChessAcademyNavGraph(
                             onNavigateBack = { navController.popBackStack() }
                         )
                     }
+                    
+                    // Academy-Modul (:feature:academy)
+                    composable(route = Screen.Academy.route) {
+                        val academyViewModel: AcademyViewModel = hiltViewModel()
+                        AcademyScreen(
+                               viewModel = academyViewModel,
+                               onNavigateBack = { navController.popBackStack() }
+                        )
+                    }
 
                     // Noch offene Feature-Module als Platzhalter behalten
                     composable(route = Screen.Academy.route) { FeaturePlaceholder("Academy Lektionen") }
