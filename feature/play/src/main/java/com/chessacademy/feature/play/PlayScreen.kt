@@ -1,9 +1,9 @@
-package com.chessacademy.feature.play
+äpackage com.chessacademy.feature.play
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Undo
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -13,15 +13,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.chessacademy.chess.board.ChessBoard
+import com.chessacademy.chess.rules.Color
 import com.chessacademy.chess.rules.GameStateStatus
 import com.chessacademy.chess.rules.Square
 import com.chessacademy.core.designsystem.components.OneUiScaffold
 
-/**
- * Vollständiger Spielbildschirm für CHESS ACADEMY.
- * Bietet interaktives Schachbrett, Spieler-Metadaten, Zugliste,
- * Statusanzeige (Schach, Matt, Patt) sowie Reset- und Steuerungsoptionen.
- */
 @Composable
 fun PlayScreen(
     viewModel: PlayViewModel,
@@ -29,18 +25,26 @@ fun PlayScreen(
 ) {
     val state by viewModel.uiState.collectAsState()
 
+    if (state.isConfiguring) {
+        GameConfigDialog(
+            onStartGame = { color, difficulty ->
+                viewModel.startNewGame(color, difficulty)
+            }
+        )
+    }
+
     OneUiScaffold(
         topBar = {
             TopAppBar(
                 title = { Text("Partie gegen Computer", fontWeight = FontWeight.Bold) },
                 actions = {
-                    IconButton(
-                        onClick = { viewModel.restartGame() }
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Refresh,
-                            contentDescription = "Neues Spiel"
-                        )
+                    if (!state.isGameOver) {
+                        IconButton(onClick = { viewModel.resignGame() }) {
+                            Icon(Icons.Default.Flag, contentDescription = "Aufgeben")
+                        }
+                    }
+                    IconButton(onClick = { viewModel.showConfigDialog() }) {
+                        Icon(Icons.Default.Refresh, contentDescription = "Neues Spiel")
                     }
                 }
             )
@@ -57,15 +61,17 @@ fun PlayScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.SpaceBetween
             ) {
-                // 1. Gegner- & Spielerinfo (Schwarz oben)
+                // Gegner-Info Card (Schwarz)
+                val opponentName = if (state.playerColor == Color.WHITE) "Stockfish (${state.engineDifficulty.name})" else "Du (Schwarz)"
+                val opponentElo = if (state.playerColor == Color.WHITE) state.engineDifficulty.elo else 1200
                 PlayerHeaderCard(
-                    playerName = "Stockfish (KI)",
-                    rating = state.engineElo,
-                    isThinking = state.isEngineThinking,
+                    playerName = opponentName,
+                    rating = opponentElo,
+                    isThinking = state.isEngineThinking || (state.boardPosition.activeColor != state.playerColor && !state.isGameOver),
                     evaluation = state.evaluationCp
                 )
 
-                // 2. Interaktives Schachbrett
+                // Schachbrett (Gesperrt während KI denkt)
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -75,29 +81,32 @@ fun PlayScreen(
                     ChessBoard(
                         boardState = state.boardState,
                         onSquareClick = { index ->
-                            val sq = Square.fromIndex(index)
-                            viewModel.onSquareSelected(sq)
+                            if (!state.isEngineThinking && state.boardPosition.activeColor == state.playerColor) {
+                                val sq = Square.fromIndex(index)
+                                viewModel.onSquareSelected(sq)
+                            }
                         }
                     )
                 }
 
-                // 3. Eigener Spieler (Weiß unten) + Zugliste
+                // Spieler (Weiß) & Zugliste
+                val playerName = if (state.playerColor == Color.WHITE) "Du (Weiß)" else "Stockfish (${state.engineDifficulty.name})"
+                val playerElo = if (state.playerColor == Color.WHITE) 1200 else state.engineDifficulty.elo
                 Column(
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     PlayerHeaderCard(
-                        playerName = "Du (Weiß)",
-                        rating = 1200,
-                        isThinking = state.boardPosition.activeColor == com.chessacademy.chess.rules.Color.WHITE && !state.isGameOver,
+                        playerName = playerName,
+                        rating = playerElo,
+                        isThinking = state.boardPosition.activeColor == state.playerColor && !state.isGameOver && state.playerColor != Color.WHITE,
                         evaluation = null
                     )
 
-                    // Zugverlauf
                     MoveHistoryView(moves = state.moveHistory)
                 }
 
-                // 4. Statusanzeige & Spielende-Dialog
+                // Status & Spielende
                 Column(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalAlignment = Alignment.CenterHorizontally
@@ -122,17 +131,15 @@ fun PlayScreen(
                                     color = MaterialTheme.colorScheme.onPrimaryContainer
                                 )
                                 Spacer(modifier = Modifier.height(8.dp))
-                                Button(onClick = { viewModel.restartGame() }) {
-                                    Text("Revanche starten")
+                                Button(onClick = { viewModel.showConfigDialog() }) {
+                                    Text("Neues Spiel starten")
                                 }
                             }
                         }
                     } else {
                         val statusText = when (state.gameStatus) {
                             GameStateStatus.CHECK -> "Schach!"
-                            GameStateStatus.CHECKMATE -> "Schachmatt!"
-                            GameStateStatus.STALEMATE -> "Patt - Unentschieden"
-                            else -> if (state.boardPosition.activeColor == com.chessacademy.chess.rules.Color.WHITE) "Du bist am Zug" else "Stockfish berechnet..."
+                            else -> if (state.boardPosition.activeColor == state.playerColor) "Du bist am Zug" else "Stockfish berechnet Zug..."
                         }
 
                         Text(
