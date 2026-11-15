@@ -41,7 +41,15 @@ class HomeViewModelTest {
     fun initialState_loadsDataSuccessfully() = runTest {
         // Arrange
         val profile = ProfileEntity(id = 1, name = "TestPlayer", eloTactics = 1400)
-        val games = listOf(GameEntity(id = "1", whitePlayerName = "TestPlayer", blackPlayerName = "Stockfish", result = "1-0", date = "2026-11-15"))
+        val games = listOf(
+            GameEntity(
+                id = "game_1",
+                whitePlayerName = "TestPlayer",
+                blackPlayerName = "Stockfish",
+                result = "1-0",
+                date = "2026-11-15"
+            )
+        )
         val prefs = UserPreferences(onboardingCompleted = true, language = "de", learningGoals = setOf("Endgame"))
 
         `when`(profileDao.getAllProfiles()).thenReturn(flowOf(listOf(profile)))
@@ -56,6 +64,7 @@ class HomeViewModelTest {
         val state = viewModel.uiState.value
         assertFalse(state.isLoading)
         assertEquals("TestPlayer", state.profile?.name)
+        assertEquals(1400, state.profile?.eloTactics)
         assertEquals(1, state.recentGames.size)
         assertEquals("de", state.language)
         assertTrue(state.learningGoals.contains("Endgame"))
@@ -65,7 +74,7 @@ class HomeViewModelTest {
     @Test
     fun errorHandling_capturesExceptionGracefully() = runTest {
         // Arrange
-        `when`(profileDao.getAllProfiles()).thenThrow(RuntimeException("Database error"))
+        `when`(profileDao.getAllProfiles()).thenThrow(RuntimeException("Database connection failed"))
         `when`(gameDao.getAllGames()).thenReturn(flowOf(emptyList()))
         `when`(preferencesRepository.userPreferencesFlow).thenReturn(flowOf(UserPreferences()))
 
@@ -77,5 +86,6 @@ class HomeViewModelTest {
         val state = viewModel.uiState.value
         assertFalse(state.isLoading)
         assertNotNull(state.errorMessage)
+        assertTrue(state.errorMessage?.contains("Database connection failed") == true)
     }
 }
